@@ -1,11 +1,13 @@
 import cv2
 from keras.models import model_from_json
-from keras.layers import Convolution2D, Dense, BatchNormalization
+from keras.layers import Convolution2D, Dense, BatchNormalization, Merge
 from keras.optimizers import SGD
 import keras.backend as K
 import numpy as np
 import json
 from resnet_101 import resnet101_model, Scale
+from keras.applications import vgg16, resnet50, inception_v3
+from keras.utils import plot_model
 nb_classes = 1000
 compression_ratio = 0.4
 
@@ -27,10 +29,13 @@ else:
 
 
 model = resnet101_model('/Users/Lavector/model/keras_models/resnet101_weights_tf.h5')
-# model = resnet101_model()
 sgd = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
 model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
 model.summary()
+
+# model = inception_v3.InceptionV3()
+# model.summary()
+# plot_model(model, to_file='model.png', show_shapes=True)
 
 
 def get_layer_output(layer, x):
@@ -64,7 +69,7 @@ def get_gradients(model, x):
     return dict(zip(layers_name, out))
 
 def get_filtered_idx(name, filter_num, gradient):
-    gradient_abs = np.abs(gradients[name + '/kernel'])
+    gradient_abs = np.abs(gradient)
     gradient_sum = np.sum(np.sum(np.sum(gradient_abs, axis=0), axis=0), axis=0)
     sorted_idx = np.argsort(gradient_sum)
 
@@ -73,24 +78,51 @@ def get_filtered_idx(name, filter_num, gradient):
     return filtered_idx
 
 def get_input_layer_name(layer):
-    input_layer = None
+    input_layers = None
     nodes = layer.inbound_nodes
     if len(nodes) == 1:
         node = nodes[0]
         input_layers = node.inbound_layers
-        if len(input_layers) == 1:
-            input_layer = input_layers[0]
-    return input_layer
+    return input_layers
 
-def get_last_conv_layer_name(layers, idx):
-    name = ''
-    for i in range(idx, -1, -1):
-        layer = get_input_layer_name(layers[i])
-        if layer != None:
-            if isinstance(layer, Convolution2D):
-                name = layer.name
+def get_last_conv_layer_name(layer):
+    name = layer.name
+    aim_layer = layer
+    while name != '':
+        input_layers = get_input_layer_name(aim_layer)
+        if input_layers != None:
+            if len(input_layers) == 1:
+                if isinstance(input_layers[0], Convolution2D):
+                    name = input_layers[0].name
+                    break
+                else:
+                    aim_layer = input_layers[0]
+                    name = aim_layer.name
+            elif len(input_layers) > 1:
+                name = aim_layer.name
                 break
+            else:
+                name = ''
+        else:
+            name = ''
     return name
+
+# layers = model.layers
+# hubs = {}
+# for i, layer in enumerate(layers):
+#     name = layer.name
+#     input_layers = get_input_layer_name(layer)
+#     if len(input_layers) > 1:
+#         print name
+#         input_conv_layers = []
+#         for input_layer in input_layers:
+#             input_conv_layer_name = get_last_conv_layer_name(input_layer)
+#             input_conv_layers.append(input_conv_layer_name)
+#         hubs[name] = input_conv_layers
+#         print hubs[name]
+
+
+
 
 layers = model.layers
 x = im
@@ -141,7 +173,7 @@ for i, layer in enumerate(layers):
         channels = layer.input_shape[channels_idx]
 
         if model_class_name == 'Model':
-            input_layer_name = get_last_conv_layer_name(layers, i)
+            input_layer_name = get_last_conv_layer_name(layer)
 
         if input_layer_name in conv_filtered_idx:
             input_filtered_idx = conv_filtered_idx[input_layer_name]

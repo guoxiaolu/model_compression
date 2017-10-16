@@ -40,6 +40,7 @@ def get_layer_output(layer, x):
     out = layer_function([x, 0])[0]
     return out
 
+
 # keras/issues/2226
 def get_gradients(model, x):
     # Get gradient tensors
@@ -53,7 +54,6 @@ def get_gradients(model, x):
 
     gradients = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
 
-
     input_tensors = [model.inputs[0],  # input data
                      model.sample_weights[0],  # how much to weight each sample by
                      model.targets[0],  # labels
@@ -64,6 +64,7 @@ def get_gradients(model, x):
 
     out = get_gradients(x)
     return dict(zip(layers_name, out))
+
 
 def get_filtered_idx(name, filter_num, gradient):
     gradient_abs = np.abs(gradients[name + '/kernel'])
@@ -91,7 +92,7 @@ for i, layer in enumerate(layers):
     if isinstance(layer, Convolution2D):
         filter_num = layer.filters
 
-        filtered_idx = get_filtered_idx(name, filter_num, gradients[name+'/kernel'])
+        filtered_idx = get_filtered_idx(name, filter_num, gradients[name + '/kernel'])
         conv_filtered_idx[name] = filtered_idx
         model_structure['config'][i]['config']['filters'] = len(conv_filtered_idx[name])
         print filter_num, filtered_idx
@@ -135,4 +136,3 @@ for i, layer in enumerate(layers):
         new_model.layers[i].set_weights(weight)
 
 new_model.save('weights_mnist_cnn_pruning.h5')
-
