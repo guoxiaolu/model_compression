@@ -1,10 +1,11 @@
 import cv2
 from keras.models import model_from_json
-from keras.layers import Convolution2D, Dense, BatchNormalization, Merge
+from keras.layers import Convolution2D, Dense, BatchNormalization, merge
 from keras.optimizers import SGD
 import keras.backend as K
 import numpy as np
 import json
+from random import sample
 from resnet_101 import resnet101_model, Scale
 from keras.applications import vgg16, resnet50, inception_v3
 from keras.utils import plot_model
@@ -75,7 +76,7 @@ def get_filtered_idx(name, filter_num, gradient):
 
     filtered_idx = sorted_idx[int(filter_num * compression_ratio):]
 
-    return filtered_idx
+    return filtered_idx.tolist()
 
 def get_input_layer_name(layer):
     input_layers = None
@@ -107,28 +108,39 @@ def get_last_conv_layer_name(layer):
             name = ''
     return name
 
-# layers = model.layers
-# hubs = {}
-# for i, layer in enumerate(layers):
-#     name = layer.name
-#     input_layers = get_input_layer_name(layer)
-#     if len(input_layers) > 1:
-#         print name
-#         input_conv_layers = []
-#         for input_layer in input_layers:
-#             input_conv_layer_name = get_last_conv_layer_name(input_layer)
-#             input_conv_layers.append(input_conv_layer_name)
-#         hubs[name] = input_conv_layers
-#         print hubs[name]
+def get_hubs_last_conv_name(layers):
+    hubs = {}
+    for i, layer in enumerate(layers):
+        name = layer.name
+        input_layers = get_input_layer_name(layer)
+        if len(input_layers) > 1:
+            # print name
+            input_conv_layers = []
+            for input_layer in input_layers:
+                input_conv_layer_name = get_last_conv_layer_name(input_layer)
+                input_conv_layers.append(input_conv_layer_name)
+            hubs[name] = input_conv_layers
+            # print name, hubs[name]
+    return hubs
 
+def recursive_find_root_conv(hub_values, new_hub_values, hubs):
+    for v in hub_values:
+        if v not in hubs:
+            new_hub_values.append(v)
+        else:
+            recursive_find_root_conv(hubs[v], new_hub_values, hubs)
+    return new_hub_values
 
-
-
+# get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
+print 'get hubs'
 layers = model.layers
+hubs = get_hubs_last_conv_name(layers)
+
 x = im
 y = label
 gradients = get_gradients(model, [x, np.ones(y.shape[0]), y, 0])
 conv_filtered_idx = {}
+hubs_filtered_idx = {}
 print 'sort convolutional layer gradient'
 # sort convolution2D gradient
 model_json = model.to_json()
@@ -154,12 +166,13 @@ for i, layer in enumerate(layers):
         else:
             pass
         print filter_num, filtered_idx
-    elif isinstance(layer, Dense):
+    else:
         pass
 
 model_json = json.dumps(model_structure)
 new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
 new_model.summary()
+
 
 # pruning filters
 print 'start pruning'
@@ -173,12 +186,34 @@ for i, layer in enumerate(layers):
         channels = layer.input_shape[channels_idx]
 
         if model_class_name == 'Model':
-            input_layer_name = get_last_conv_layer_name(layer)
+            layer_name = get_last_conv_layer_name(layer)
+            # find last convolutional layer
+            if layer_name not in hubs:
+                input_layer_name = layer_name
 
-        if input_layer_name in conv_filtered_idx:
-            input_filtered_idx = conv_filtered_idx[input_layer_name]
+                if input_layer_name in conv_filtered_idx:
+                    input_filtered_idx = conv_filtered_idx[input_layer_name]
+                else:
+                    input_filtered_idx = range(0, channels)
+            # find merge/concat layer
+            else:
+                input_layer_name = recursive_find_root_conv(hubs[layer_name], [], hubs)
+                input_filtered_idx = []
+                for conv_layer_name in input_layer_name:
+                    if conv_layer_name in conv_filtered_idx:
+                        input_filtered_idx += conv_filtered_idx[conv_layer_name]
+                    else:
+                        input_filtered_idx += range(0, channels)
+                input_filtered_idx = list(set(input_filtered_idx))
+                # select random idx
+                input_filters_num = new_model.layers[i].input_shape[-1]
+                input_filtered_idx = sample(input_filtered_idx, input_filters_num)
+
         else:
-            input_filtered_idx = range(0, channels)
+            if input_layer_name in conv_filtered_idx:
+                input_filtered_idx = conv_filtered_idx[input_layer_name]
+            else:
+                input_filtered_idx = range(0, channels)
 
         output_filtered_idx = conv_filtered_idx[name]
         new_weight_kernel = weight[0][:, :, input_filtered_idx, :]
