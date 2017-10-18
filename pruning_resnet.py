@@ -40,23 +40,35 @@ model.summary()
 
 
 def get_layer_output(layer, x):
+    '''
+    Get layer output based on its input.
+    :param layer: model.layer
+    :param x: layer input
+    :return: the output of this layer
+    '''
     layer_function = K.function([layer.input, K.learning_phase()], [layer.output])
     out = layer_function([x, 0])[0]
     return out
 
-# keras/issues/2226
 def get_gradients(model, x):
+    '''
+    This func is based on #keras/issues/2226.
+    :param model: the model instance
+    :param x: input, like [x, np.ones(y.shape[0]), y, 0] : x is np.array(None, height, width, channel),
+              y is one-hot (1, nb_classes)
+    :return: dict of weights
+    '''
     # Get gradient tensors
     trainable_weights = model.trainable_weights  # weight tensors
     weights = []
     layers_name = []
+    # weight name is different from layer name, as the weight is consisted of kernel and bias
     for weight in trainable_weights:
         if model.get_layer(weight.name.split('/')[0]).trainable:
             weights.append(weight)
             layers_name.append(weight.name[:-2])
 
     gradients = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
-
 
     input_tensors = [model.inputs[0],  # input data
                      model.sample_weights[0],  # how much to weight each sample by
@@ -65,20 +77,32 @@ def get_gradients(model, x):
                      ]
 
     get_gradients = K.function(inputs=input_tensors, outputs=gradients)
-
     out = get_gradients(x)
     return dict(zip(layers_name, out))
 
 def get_filtered_idx(filter_num, gradient):
+    '''
+    Sort gradient of each layer.
+    gradient shape is (filter_kernel_size0, filter_kernel_size1, input_filter_num, output_filter_num),
+    1st, get abs_gradient
+    2nd, get sum, the shape is (1, output_filter_num)
+    then sort it.
+    :param filter_num: the filter number of this layer
+    :param gradient: the gradient of this layer
+    :return: list of filter index to be filtered
+    '''
     gradient_abs = np.abs(gradient)
     gradient_sum = np.sum(np.sum(np.sum(gradient_abs, axis=0), axis=0), axis=0)
     sorted_idx = np.argsort(gradient_sum)
-
     filtered_idx = sorted_idx[int(filter_num * compression_ratio):]
-
     return filtered_idx.tolist()
 
 def get_input_layer_name(layer):
+    '''
+    Get input of one layer
+    :param layer: layer instance
+    :return: input layers
+    '''
     input_layers = None
     nodes = layer.inbound_nodes
     if len(nodes) == 1:
@@ -87,6 +111,11 @@ def get_input_layer_name(layer):
     return input_layers
 
 def get_last_conv_layer_name(layer):
+    '''
+    Get last convolution/merge/concat layer name
+    :param layer: layer instance
+    :return: the last convolutional layer name or Merge, Concat layer (which has many inputs)
+    '''
     name = layer.name
     aim_layer = layer
     while name != '':
@@ -109,21 +138,31 @@ def get_last_conv_layer_name(layer):
     return name
 
 def get_hubs_last_conv_name(layers):
+    '''
+    Get hubs (Merge, Concat) last convolutional layer name
+    :param layers: model.layers
+    :return: the dict of hub, key is hub name, value is its input
+    '''
     hubs = {}
     for i, layer in enumerate(layers):
         name = layer.name
         input_layers = get_input_layer_name(layer)
         if len(input_layers) > 1:
-            # print name
             input_conv_layers = []
             for input_layer in input_layers:
                 input_conv_layer_name = get_last_conv_layer_name(input_layer)
                 input_conv_layers.append(input_conv_layer_name)
             hubs[name] = input_conv_layers
-            # print name, hubs[name]
     return hubs
 
 def recursive_find_root_conv(hub_values, new_hub_values, hubs):
+    '''
+    Recursive function, find all convolutional layer name of hub (Merge, Concat)
+    :param hub_values: hub
+    :param new_hub_values: one hub input
+    :param hubs: hub dict
+    :return: one hub input
+    '''
     for v in hub_values:
         if v not in hubs:
             new_hub_values.append(v)
@@ -142,7 +181,7 @@ hubs = get_hubs_last_conv_name(layers)
 
 conv_filtered_idx = {}
 hubs_filtered_idx = {}
-print 'sort convolutional layer gradient'
+print 'sort convolutional layer gradient and reconstruct model'
 # sort convolution2D gradient
 model_json = model.to_json()
 model_structure = json.loads(model_json)
@@ -153,7 +192,6 @@ if model_class_name == 'Model':
 for i, layer in enumerate(layers):
     name = layer.name
     print name
-    # x = get_layer_output(layer, x)
     if isinstance(layer, Convolution2D):
         filter_num = layer.filters
 
