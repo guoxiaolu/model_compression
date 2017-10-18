@@ -69,7 +69,7 @@ def get_gradients(model, x):
     out = get_gradients(x)
     return dict(zip(layers_name, out))
 
-def get_filtered_idx(name, filter_num, gradient):
+def get_filtered_idx(filter_num, gradient):
     gradient_abs = np.abs(gradient)
     gradient_sum = np.sum(np.sum(np.sum(gradient_abs, axis=0), axis=0), axis=0)
     sorted_idx = np.argsort(gradient_sum)
@@ -131,14 +131,15 @@ def recursive_find_root_conv(hub_values, new_hub_values, hubs):
             recursive_find_root_conv(hubs[v], new_hub_values, hubs)
     return new_hub_values
 
+x = im
+y = label
+gradients = get_gradients(model, [x, np.ones(y.shape[0]), y, 0])
+
 # get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
 print 'get hubs'
 layers = model.layers
 hubs = get_hubs_last_conv_name(layers)
 
-x = im
-y = label
-gradients = get_gradients(model, [x, np.ones(y.shape[0]), y, 0])
 conv_filtered_idx = {}
 hubs_filtered_idx = {}
 print 'sort convolutional layer gradient'
@@ -156,7 +157,7 @@ for i, layer in enumerate(layers):
     if isinstance(layer, Convolution2D):
         filter_num = layer.filters
 
-        filtered_idx = get_filtered_idx(name, filter_num, gradients[name+'/kernel'])
+        filtered_idx = get_filtered_idx(filter_num, gradients[name+'/kernel'])
         conv_filtered_idx[name] = filtered_idx
         if model_class_name == 'Model':
             idx = model_layer_name.index(name)
