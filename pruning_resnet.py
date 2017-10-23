@@ -1,7 +1,14 @@
+import os
+os.environ['KERAS_BACKEND'] = 'tensorflow'
+import keras.backend as K
+K.set_image_dim_ordering('tf')
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 import cv2
 from keras.models import model_from_json
 from keras.layers import Convolution2D, Dense, BatchNormalization, merge
 from keras.optimizers import SGD
+from keras.preprocessing.image import ImageDataGenerator
 import keras.backend as K
 import numpy as np
 import json
@@ -9,30 +16,40 @@ from random import sample
 from resnet_101 import resnet101_model, Scale
 from keras.applications import vgg16, resnet50, inception_v3
 from keras.utils import plot_model
-nb_classes = 1000
+
+categories = './categories.txt'
+train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample'
+
+f = open(categories, mode='r')
+classes = [line.strip() for line in f.readlines()]
+nb_classes = len(classes)
+
 compression_ratio = 0.4
+image_size = (224, 224)
+batch_size = 16
 
-im = cv2.resize(cv2.imread('cat.jpg'), (224, 224)).astype(np.float32)
-
-# Remove train image mean
-im[:,:,0] -= 103.939
-im[:,:,1] -= 116.779
-im[:,:,2] -= 123.68
-
-im = np.expand_dims(im, axis=0)
-label = np.zeros((1, nb_classes))
-label[0, 281] = 1
+def processing_function(x):
+    # Remove zero-center by mean pixel, BGR mode
+    x[:, :, 0] -= 103.939
+    x[:, :, 1] -= 116.779
+    x[:, :, 2] -= 123.68
+    return x
 
 if K.image_dim_ordering() == 'th':
     channels_idx = 1
 else:
     channels_idx = -1
 
-
-model = resnet101_model('/Users/Lavector/model/keras_models/resnet101_weights_tf.h5')
+model = resnet101_model('./model/resnet101_weights_tf.h5')
 sgd = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
 model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
 model.summary()
+
+# datagenerator
+gen = ImageDataGenerator(preprocessing_function=processing_function)
+train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
+                                          batch_size=batch_size)
+
 
 # model = inception_v3.InceptionV3()
 # model.summary()
@@ -50,7 +67,7 @@ def get_layer_output(layer, x):
     out = layer_function([x, 0])[0]
     return out
 
-def get_gradients(model, x):
+def get_gradients(model, x, gradients_all, layers_name):
     '''
     This func is based on #keras/issues/2226.
     :param model: the model instance
@@ -58,17 +75,6 @@ def get_gradients(model, x):
               y is one-hot (1, nb_classes)
     :return: dict of weights
     '''
-    # Get gradient tensors
-    trainable_weights = model.trainable_weights  # weight tensors
-    weights = []
-    layers_name = []
-    # weight name is different from layer name, as the weight is consisted of kernel and bias
-    for weight in trainable_weights:
-        if model.get_layer(weight.name.split('/')[0]).trainable:
-            weights.append(weight)
-            layers_name.append(weight.name[:-2])
-
-    gradients = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
 
     input_tensors = [model.inputs[0],  # input data
                      model.sample_weights[0],  # how much to weight each sample by
@@ -76,7 +82,7 @@ def get_gradients(model, x):
                      K.learning_phase(),  # train or test mode
                      ]
 
-    get_gradients = K.function(inputs=input_tensors, outputs=gradients)
+    get_gradients = K.function(inputs=input_tensors, outputs=gradients_all)
     out = get_gradients(x)
     return dict(zip(layers_name, out))
 
@@ -170,9 +176,29 @@ def recursive_find_root_conv(hub_values, new_hub_values, hubs):
             recursive_find_root_conv(hubs[v], new_hub_values, hubs)
     return new_hub_values
 
-x = im
-y = label
-gradients = get_gradients(model, [x, np.ones(y.shape[0]), y, 0])
+
+# Get gradient tensors
+trainable_weights = model.trainable_weights  # weight tensors
+weights = []
+layers_name = []
+# weight name is different from layer name, as the weight is consisted of kernel and bias
+for weight in trainable_weights:
+    if model.get_layer(weight.name.split('/')[0]).trainable:
+        weights.append(weight)
+        layers_name.append(weight.name[:-2])
+
+gradients_all = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
+
+total = 0
+gradients = dict(zip(layers_name, [0]*len(layers_name)))
+for x_batch, y_batch in train_generator:
+    gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
+    for k,v in gradient.iteritems():
+        gradients[k] = v + gradients[k] * total
+        gradients[k] = gradients[k] / (total + x_batch.shape[0])
+    total += x_batch.shape[0]
+    print total
+
 
 # get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
 print 'get hubs'

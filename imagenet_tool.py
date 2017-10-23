@@ -44,7 +44,7 @@ def synset_to_dfs_ids(synset):
     
 
 def synset_to_id(synset):
-    a = next((i for (i,s) in synsets if s == synset), None)
+    a = next((i for (i,s) in synsets_imagenet_sorted if s == synset), None)
     return a
 
 
@@ -60,7 +60,11 @@ def pprint_output(out, n_max_synsets=10):
     for u in best_ids:
         print("%.2f"% round(100*out[u],2)+" : "+id_to_words(u))
 
+# synset = id_to_synset(65)
+# id = synset_to_id(synset)
+# print synset, id
 for i in range(1000):
     words = id_to_words(i)
     synset = id_to_synset(i)
-    print i, synset, words
+    # print i, synset, words
+    print synset
