@@ -18,7 +18,7 @@ from keras.applications import vgg16, resnet50, inception_v3
 from keras.utils import plot_model
 
 categories = './categories.txt'
-train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample'
+train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample1'
 
 f = open(categories, mode='r')
 classes = [line.strip() for line in f.readlines()]
@@ -39,16 +39,6 @@ if K.image_dim_ordering() == 'th':
     channels_idx = 1
 else:
     channels_idx = -1
-
-model = resnet101_model('./model/resnet101_weights_tf.h5')
-sgd = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
-model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
-model.summary()
-
-# datagenerator
-gen = ImageDataGenerator(preprocessing_function=processing_function)
-train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
-                                          batch_size=batch_size)
 
 
 # model = inception_v3.InceptionV3()
@@ -176,126 +166,138 @@ def recursive_find_root_conv(hub_values, new_hub_values, hubs):
             recursive_find_root_conv(hubs[v], new_hub_values, hubs)
     return new_hub_values
 
+if __name__ == '__main__':
 
-# Get gradient tensors
-trainable_weights = model.trainable_weights  # weight tensors
-weights = []
-layers_name = []
-# weight name is different from layer name, as the weight is consisted of kernel and bias
-for weight in trainable_weights:
-    if model.get_layer(weight.name.split('/')[0]).trainable:
-        weights.append(weight)
-        layers_name.append(weight.name[:-2])
+    model = resnet101_model('./model/resnet101_weights_tf.h5')
+    sgd = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
+    model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.summary()
 
-gradients_all = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
+    # datagenerator
+    gen = ImageDataGenerator(preprocessing_function=processing_function)
+    train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
+                                              batch_size=batch_size)
 
-total = 0
-gradients = dict(zip(layers_name, [0]*len(layers_name)))
-for x_batch, y_batch in train_generator:
-    gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
-    for k,v in gradient.iteritems():
-        gradients[k] = v + gradients[k] * total
-        gradients[k] = gradients[k] / (total + x_batch.shape[0])
-    total += x_batch.shape[0]
-    print total
+    # Get gradient tensors
+    trainable_weights = model.trainable_weights  # weight tensors
+    weights = []
+    layers_name = []
+    # weight name is different from layer name, as the weight is consisted of kernel and bias
+    for weight in trainable_weights:
+        if model.get_layer(weight.name.split('/')[0]).trainable:
+            weights.append(weight)
+            layers_name.append(weight.name[:-2])
+
+    gradients_all = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
+    total = 0
+    gradients = dict(zip(layers_name, [0]*len(layers_name)))
+    for x_batch, y_batch in train_generator:
+        gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
+        for k,v in gradient.iteritems():
+            gradients[k] = v + gradients[k] * total
+            gradients[k] = gradients[k] / (total + x_batch.shape[0])
+        total += x_batch.shape[0]
+        print total
+        if total >= train_generator.n:
+            break
 
 
-# get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
-print 'get hubs'
-layers = model.layers
-hubs = get_hubs_last_conv_name(layers)
+    # get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
+    print 'get hubs'
+    layers = model.layers
+    hubs = get_hubs_last_conv_name(layers)
 
-conv_filtered_idx = {}
-hubs_filtered_idx = {}
-print 'sort convolutional layer gradient and reconstruct model'
-# sort convolution2D gradient
-model_json = model.to_json()
-model_structure = json.loads(model_json)
+    conv_filtered_idx = {}
+    hubs_filtered_idx = {}
+    print 'sort convolutional layer gradient and reconstruct model'
+    # sort convolution2D gradient
+    model_json = model.to_json()
+    model_structure = json.loads(model_json)
 
-model_class_name = model_structure['class_name']
-if model_class_name == 'Model':
-    model_layer_name = [layer['name'] for layer in model_structure['config']['layers']]
-for i, layer in enumerate(layers):
-    name = layer.name
-    print name
-    if isinstance(layer, Convolution2D):
-        filter_num = layer.filters
+    model_class_name = model_structure['class_name']
+    if model_class_name == 'Model':
+        model_layer_name = [layer['name'] for layer in model_structure['config']['layers']]
+    for i, layer in enumerate(layers):
+        name = layer.name
+        print name
+        if isinstance(layer, Convolution2D):
+            filter_num = layer.filters
 
-        filtered_idx = get_filtered_idx(filter_num, gradients[name+'/kernel'])
-        conv_filtered_idx[name] = filtered_idx
-        if model_class_name == 'Model':
-            idx = model_layer_name.index(name)
-            model_structure['config']['layers'][idx]['config']['filters'] = len(conv_filtered_idx[name])
-        elif model_class_name == 'Sequential':
-            model_structure['config'][i]['config']['filters'] = len(conv_filtered_idx[name])
+            filtered_idx = get_filtered_idx(filter_num, gradients[name+'/kernel'])
+            conv_filtered_idx[name] = filtered_idx
+            if model_class_name == 'Model':
+                idx = model_layer_name.index(name)
+                model_structure['config']['layers'][idx]['config']['filters'] = len(conv_filtered_idx[name])
+            elif model_class_name == 'Sequential':
+                model_structure['config'][i]['config']['filters'] = len(conv_filtered_idx[name])
+            else:
+                pass
+            print filter_num, filtered_idx
         else:
             pass
-        print filter_num, filtered_idx
-    else:
-        pass
 
-model_json = json.dumps(model_structure)
-new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
-new_model.summary()
+    model_json = json.dumps(model_structure)
+    new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
+    # new_model.summary()
 
 
-# pruning filters
-print 'start pruning'
-input_layer_name = None
-for i, layer in enumerate(layers):
-    name = layer.name
-    print name
-    weight = layer.get_weights()
-    if isinstance(layer, Convolution2D):
-        new_weight = []
-        channels = layer.input_shape[channels_idx]
+    # pruning filters
+    print 'start pruning'
+    input_layer_name = None
+    for i, layer in enumerate(layers):
+        name = layer.name
+        print name
+        weight = layer.get_weights()
+        if isinstance(layer, Convolution2D):
+            new_weight = []
+            channels = layer.input_shape[channels_idx]
 
-        if model_class_name == 'Model':
-            layer_name = get_last_conv_layer_name(layer)
-            # find last convolutional layer
-            if layer_name not in hubs:
-                input_layer_name = layer_name
+            if model_class_name == 'Model':
+                layer_name = get_last_conv_layer_name(layer)
+                # find last convolutional layer
+                if layer_name not in hubs:
+                    input_layer_name = layer_name
 
+                    if input_layer_name in conv_filtered_idx:
+                        input_filtered_idx = conv_filtered_idx[input_layer_name]
+                    else:
+                        input_filtered_idx = range(0, channels)
+                # find merge/concat layer
+                else:
+                    input_layer_name = recursive_find_root_conv(hubs[layer_name], [], hubs)
+                    input_filtered_idx = []
+                    for conv_layer_name in input_layer_name:
+                        if conv_layer_name in conv_filtered_idx:
+                            input_filtered_idx += conv_filtered_idx[conv_layer_name]
+                        else:
+                            input_filtered_idx += range(0, channels)
+                    input_filtered_idx = list(set(input_filtered_idx))
+                    # select random idx
+                    input_filters_num = new_model.layers[i].input_shape[-1]
+                    input_filtered_idx = sample(input_filtered_idx, input_filters_num)
+
+            else:
                 if input_layer_name in conv_filtered_idx:
                     input_filtered_idx = conv_filtered_idx[input_layer_name]
                 else:
                     input_filtered_idx = range(0, channels)
-            # find merge/concat layer
-            else:
-                input_layer_name = recursive_find_root_conv(hubs[layer_name], [], hubs)
-                input_filtered_idx = []
-                for conv_layer_name in input_layer_name:
-                    if conv_layer_name in conv_filtered_idx:
-                        input_filtered_idx += conv_filtered_idx[conv_layer_name]
-                    else:
-                        input_filtered_idx += range(0, channels)
-                input_filtered_idx = list(set(input_filtered_idx))
-                # select random idx
-                input_filters_num = new_model.layers[i].input_shape[-1]
-                input_filtered_idx = sample(input_filtered_idx, input_filters_num)
 
+            output_filtered_idx = conv_filtered_idx[name]
+            new_weight_kernel = weight[0][:, :, input_filtered_idx, :]
+            new_weight_kernel = new_weight_kernel[:, :, :, output_filtered_idx]
+            new_weight.append(new_weight_kernel)
+
+            if layer.bias != None:
+                new_weight_bias = weight[1][output_filtered_idx]
+                new_weight.append(new_weight_bias)
+
+            new_model.layers[i].set_weights(new_weight)
+
+            if model_class_name == 'Sequential':
+                input_layer_name = name
         else:
-            if input_layer_name in conv_filtered_idx:
-                input_filtered_idx = conv_filtered_idx[input_layer_name]
-            else:
-                input_filtered_idx = range(0, channels)
+            pass
+            # new_model.layers[i].set_weights(weight)
 
-        output_filtered_idx = conv_filtered_idx[name]
-        new_weight_kernel = weight[0][:, :, input_filtered_idx, :]
-        new_weight_kernel = new_weight_kernel[:, :, :, output_filtered_idx]
-        new_weight.append(new_weight_kernel)
-
-        if layer.bias != None:
-            new_weight_bias = weight[1][output_filtered_idx]
-            new_weight.append(new_weight_bias)
-
-        new_model.layers[i].set_weights(new_weight)
-
-        if model_class_name == 'Sequential':
-            input_layer_name = name
-    else:
-        pass
-        # new_model.layers[i].set_weights(weight)
-
-new_model.save('resnet101_weights_tf_pruning.h5')
+    new_model.save('resnet101_weights_tf_pruning.h5')
 
