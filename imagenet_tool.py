@@ -49,7 +49,8 @@ def synset_to_id(synset):
 
 
 def id_to_synset(id_):
-    return str(synsets[corr_inv[id_]-1][1][0])
+    # return str(synsets[corr_inv[id_]-1][1][0])
+    return str(synsets[id_-1][1][0])
     
 
 def id_to_words(id_):
@@ -66,5 +67,5 @@ def pprint_output(out, n_max_synsets=10):
 for i in range(1000):
     words = id_to_words(i)
     synset = id_to_synset(i)
-    # print i, synset, words
-    print synset
+    print i, synset, words
+    # print synset

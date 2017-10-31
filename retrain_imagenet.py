@@ -1,69 +1,66 @@
+import os
+os.environ['KERAS_BACKEND'] = 'tensorflow'
+import keras.backend as K
+K.set_image_dim_ordering('tf')
 from keras.models import load_model
 from keras.layers import Convolution2D
+from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import TensorBoard, ModelCheckpoint
 import keras.backend as K
+from keras.optimizers import SGD
+from keras.utils.generic_utils import CustomObjectScope
 from keras.datasets import mnist
 from keras.utils import np_utils
 from time import time
+from resnet_101 import resnet101_model, Scale
 
-batch_size = 128
-nb_classes = 10
-nb_epoch = 6
+categories = './categories.txt'
+train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train'
+val_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/val_dir'
 
-(X_train, y_train), (X_test, y_test) = mnist.load_data()
-img_rows, img_cols = 28, 28
-compression_ratio = 0.2
+f = open(categories, mode='r')
+classes = [line.strip() for line in f.readlines()]
+nb_classes = len(classes)
+
+compression_ratio = 0.4
+image_size = (224, 224)
+batch_size = 32
+nb_epoch = 100
+
+def processing_function(x):
+    # Remove zero-center by mean pixel, BGR mode
+    x[:, :, 0] -= 103.939
+    x[:, :, 1] -= 116.779
+    x[:, :, 2] -= 123.68
+    return x
 
 if K.image_dim_ordering() == 'th':
-    X_train = X_train.reshape(X_train.shape[0], 1, img_rows, img_cols)
-    X_test = X_test.reshape(X_test.shape[0], 1, img_rows, img_cols)
-    input_shape = (1, img_rows, img_cols)
     channels_idx = 1
 else:
-    X_train = X_train.reshape(X_train.shape[0], img_rows, img_cols, 1)
-    X_test = X_test.reshape(X_test.shape[0], img_rows, img_cols, 1)
-    input_shape = (img_rows, img_cols, 1)
     channels_idx = -1
 
-X_train = X_train.astype('float32')
-X_test = X_test.astype('float32')
-X_train /= 255
-X_test /= 255
+# datagenerator
+gen = ImageDataGenerator(preprocessing_function=processing_function)
+train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
+                                              batch_size=batch_size)
+val_generator = gen.flow_from_directory(val_img_path, target_size=image_size, classes=classes, shuffle=False,
+                                              batch_size=1)
 
-# convert class vectors to binary class matrices
-Y_train = np_utils.to_categorical(y_train, nb_classes)
-Y_test = np_utils.to_categorical(y_test, nb_classes)
-
-model = load_model('./weights_mnist_cnn.h5')
-model.summary()
-start = time()
-score = model.evaluate(X_test, Y_test, verbose=0)
-end = time()
-print('Test score:', score[0])
-print('Test accuracy:', score[1])
-print('cost time:', end-start)
-
-model_pruning = load_model('./weights_mnist_cnn_pruning.h5')
-model_pruning.summary()
-# score = model_pruning.evaluate(X_test, Y_test, verbose=0)
-# print('Test score:', score[0])
-# print('Test accuracy:', score[1])
-
+# model_pruning = load_model('./resnet101_weights_tf_pruning.h5', custom_objects={'Scale':Scale})
+model_pruning = load_model('./model/weights.00017.hdf5', custom_objects={'Scale':Scale})
+# model_pruning.summary()
 
 layers = model_pruning.layers
 for layer in layers:
     if isinstance(layer, Convolution2D):
         layer.trainable = False
 
+sgd = SGD(lr=0.001, momentum=0.9, decay=1e-3, nesterov=False)
 model_pruning.compile(loss='categorical_crossentropy',
-              optimizer='adadelta',
+              optimizer=sgd,
               metrics=['accuracy'])
-model_pruning.fit(X_train, Y_train, batch_size=batch_size, nb_epoch=nb_epoch,
-          verbose=1, validation_data=(X_test, Y_test))
+tb = TensorBoard(log_dir='./logs', histogram_freq=0, write_graph=True, write_images=False)
+mc = ModelCheckpoint('./model/weights.{epoch:05d}.hdf5', monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', period=1)
+model_pruning.fit_generator(train_generator, train_generator.n/batch_size, nb_epoch=nb_epoch, callbacks=[tb, mc], validation_data=val_generator, validation_steps=val_generator.n, initial_epoch=18)
 
-start = time()
-score = model_pruning.evaluate(X_test, Y_test, verbose=0)
-end = time()
-print('Test score:', score[0])
-print('Test accuracy:', score[1])
-print('cost time:', end-start)
-model_pruning.save('./weights_mnist_cnn_pruning_retrain.h5')
+model_pruning.save('./resnet101_weights_tf_pruning_retrain.h5')

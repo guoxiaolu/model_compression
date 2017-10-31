@@ -2,9 +2,9 @@ import os
 import shutil
 from random import sample
 
-src_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train'
+src_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample0'
 dst_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample1'
-sample_ratio = 0.2
+sample_ratio = 0.24
 
 dirs = os.listdir(src_path)
 for onedir in dirs:
