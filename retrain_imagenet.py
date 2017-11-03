@@ -8,11 +8,7 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import TensorBoard, ModelCheckpoint
 import keras.backend as K
 from keras.optimizers import SGD
-from keras.utils.generic_utils import CustomObjectScope
-from keras.datasets import mnist
-from keras.utils import np_utils
-from time import time
-from resnet_101 import resnet101_model, Scale
+from resnet_101 import Scale
 
 categories = './categories.txt'
 train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train'
@@ -55,7 +51,7 @@ for layer in layers:
     if isinstance(layer, Convolution2D):
         layer.trainable = False
 
-sgd = SGD(lr=0.001, momentum=0.9, decay=1e-3, nesterov=False)
+sgd = SGD(lr=0.1, momentum=0.9, decay=4e-6, nesterov=False)
 model_pruning.compile(loss='categorical_crossentropy',
               optimizer=sgd,
               metrics=['accuracy'])

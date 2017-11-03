@@ -36,7 +36,7 @@ weights_path = './model/weights.00298.hdf5'
 model = load_model(weights_path, custom_objects={'Scale':Scale})
 # model.summary()
 # model = VGG16(weights_path)
-sgd = SGD(lr=0.01, momentum=0.9, decay=1e-6, nesterov=False)
+sgd = SGD(lr=0.01, momentum=0.9, decay=4e-6, nesterov=False)
 model.compile(loss='categorical_crossentropy',
               optimizer=sgd,
               metrics=['accuracy'])
