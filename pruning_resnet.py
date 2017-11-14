@@ -16,6 +16,8 @@ from random import sample
 from resnet_101 import resnet101_model, Scale
 from keras.applications import vgg16, resnet50, inception_v3
 from keras.utils import plot_model
+import gc
+import psutil
 
 categories = './categories.txt'
 train_img_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/train_sample1'
@@ -27,6 +29,11 @@ nb_classes = len(classes)
 compression_ratio = 0.4
 image_size = (224, 224)
 batch_size = 16
+
+
+def get_mem_usage():
+    process = psutil.Process(os.getpid())
+    return process.memory_info()
 
 def processing_function(x):
     # Remove zero-center by mean pixel, BGR mode
@@ -192,12 +199,14 @@ if __name__ == '__main__':
     total = 0
     gradients = dict(zip(layers_name, [0]*len(layers_name)))
     for x_batch, y_batch in train_generator:
+        gc.collect()
         gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
+        mem = get_mem_usage()
         for k,v in gradient.iteritems():
             gradients[k] = v + gradients[k] * total
             gradients[k] = gradients[k] / (total + x_batch.shape[0])
         total += x_batch.shape[0]
-        print total
+        print total, mem
         if total >= train_generator.n:
             break
 
