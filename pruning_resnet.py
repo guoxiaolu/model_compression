@@ -64,7 +64,7 @@ def get_layer_output(layer, x):
     out = layer_function([x, 0])[0]
     return out
 
-def get_gradients(model, x, gradients_all, layers_name):
+def get_gradients(model, x, layers_name):
     '''
     This func is based on #keras/issues/2226.
     :param model: the model instance
@@ -72,6 +72,8 @@ def get_gradients(model, x, gradients_all, layers_name):
               y is one-hot (1, nb_classes)
     :return: dict of weights
     '''
+
+    gradients_all = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
 
     input_tensors = [model.inputs[0],  # input data
                      model.sample_weights[0],  # how much to weight each sample by
@@ -195,12 +197,12 @@ if __name__ == '__main__':
             weights.append(weight)
             layers_name.append(weight.name[:-2])
 
-    gradients_all = model.optimizer.get_gradients(model.total_loss, weights)  # gradient tensors
     total = 0
     gradients = dict(zip(layers_name, [0]*len(layers_name)))
     for x_batch, y_batch in train_generator:
         gc.collect()
-        gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
+        K.clear_session()
+        gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], layers_name)
         mem = get_mem_usage()
         for k,v in gradient.iteritems():
             gradients[k] = v + gradients[k] * total
