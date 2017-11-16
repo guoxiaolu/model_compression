@@ -175,6 +175,7 @@ def recursive_find_root_conv(hub_values, new_hub_values, hubs):
             recursive_find_root_conv(hubs[v], new_hub_values, hubs)
     return new_hub_values
 
+
 if __name__ == '__main__':
 
     model = resnet101_model('./model/resnet101_weights_tf.h5')
@@ -187,30 +188,32 @@ if __name__ == '__main__':
     train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
                                               batch_size=batch_size)
 
-    # Get gradient tensors
-    trainable_weights = model.trainable_weights  # weight tensors
-    weights = []
-    layers_name = []
-    # weight name is different from layer name, as the weight is consisted of kernel and bias
-    for weight in trainable_weights:
-        if model.get_layer(weight.name.split('/')[0]).trainable:
-            weights.append(weight)
-            layers_name.append(weight.name[:-2])
+    # # Get gradient tensors
+    # trainable_weights = model.trainable_weights  # weight tensors
+    # weights = []
+    # layers_name = []
+    # # weight name is different from layer name, as the weight is consisted of kernel and bias
+    # for weight in trainable_weights:
+    #     if model.get_layer(weight.name.split('/')[0]).trainable:
+    #         weights.append(weight)
+    #         layers_name.append(weight.name[:-2])
 
-    total = 0
-    gradients = dict(zip(layers_name, [0]*len(layers_name)))
-    for x_batch, y_batch in train_generator:
-        gc.collect()
-        K.clear_session()
-        gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], layers_name)
-        mem = get_mem_usage()
-        for k,v in gradient.iteritems():
-            gradients[k] = v + gradients[k] * total
-            gradients[k] = gradients[k] / (total + x_batch.shape[0])
-        total += x_batch.shape[0]
-        print total, mem
-        if total >= train_generator.n:
-            break
+    # total = 0
+    # gradients = dict(zip(layers_name, [0]*len(layers_name)))
+    # for x_batch, y_batch in train_generator:
+    #     gc.collect()
+    #     K.clear_session()
+    #     gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], layers_name)
+    #     mem = get_mem_usage()
+    #     for k,v in gradient.iteritems():
+    #         gradients[k] = v + gradients[k] * total
+    #         gradients[k] = gradients[k] / (total + x_batch.shape[0])
+    #     total += x_batch.shape[0]
+    #     print total, mem
+    #     if total >= train_generator.n:
+    #         break
+
+    gradients = np.load('./all.npy').item()
 
 
     # get hubs (layers like merge, concatenate, which has many inputs) last convolution layer name
