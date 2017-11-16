@@ -31,7 +31,7 @@ nb_classes = len(classes)
 
 compression_ratio = 0.4
 image_size = (224, 224)
-batch_size = 16
+batch_size = 1
 
 
 def get_mem_usage():
@@ -224,7 +224,7 @@ if __name__ == '__main__':
         gradient = get_gradients(model, [x_batch, np.ones(y_batch.shape[0]), y_batch, 0], gradients_all, layers_name)
         mem = get_mem_usage()
         for k, v in gradient.iteritems():
-            gradients[k] += v * x_batch.shape[0]
+            gradients[k] += np.abs(v) * x_batch.shape[0]
         print total, mem
         if total >= train_generator.n:
             break
