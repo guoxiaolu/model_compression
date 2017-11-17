@@ -184,9 +184,9 @@ if __name__ == '__main__':
     model.summary()
 
     # datagenerator
-    gen = ImageDataGenerator(preprocessing_function=processing_function)
-    train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
-                                              batch_size=batch_size)
+    # gen = ImageDataGenerator(preprocessing_function=processing_function)
+    # train_generator = gen.flow_from_directory(train_img_path, target_size=image_size, classes=classes, shuffle=True,
+    #                                           batch_size=batch_size)
 
     # # Get gradient tensors
     # trainable_weights = model.trainable_weights  # weight tensors
@@ -288,7 +288,8 @@ if __name__ == '__main__':
                     input_filtered_idx = list(set(input_filtered_idx))
                     # select random idx
                     input_filters_num = new_model.layers[i].input_shape[-1]
-                    input_filtered_idx = sample(input_filtered_idx, input_filters_num)
+                    # input_filtered_idx = sample(input_filtered_idx, input_filters_num)
+                    input_filtered_idx = input_filtered_idx[:input_filters_num]
 
             else:
                 if input_layer_name in conv_filtered_idx:
