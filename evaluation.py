@@ -41,12 +41,26 @@ from imagenet_tool import id_to_synset, synset_to_id
 #               metrics=['accuracy'])
 #
 # def processing_function(x):
-#     # Remove zero-center by mean pixel, BGR mode
-#     x[:, :, 0] -= 103.939
-#     x[:, :, 1] -= 116.779
-#     x[:, :, 2] -= 123.68
+#
+#     data_format = K.image_data_format()
+#     assert data_format in {'channels_last', 'channels_first'}
+#
+#     if data_format == 'channels_first':
+#         # 'RGB'->'BGR'
+#         x = x[:, ::-1, :, :]
+#         # Zero-center by mean pixel
+#         x[:, 0, :, :] -= 103.939
+#         x[:, 1, :, :] -= 116.779
+#         x[:, 2, :, :] -= 123.68
+#     else:
+#         # 'RGB'->'BGR'
+#         x = x[:, :, :, ::-1]
+#         # Zero-center by mean pixel
+#         x[:, :, :, 0] -= 103.939
+#         x[:, :, :, 1] -= 116.779
+#         x[:, :, :, 2] -= 123.68
 #     return x
-
+#
 # gen = image.ImageDataGenerator(preprocessing_function=processing_function)
 #
 # val_generator = gen.flow_from_directory(val_path, target_size=(224,224), classes=classes, shuffle=False,
@@ -54,7 +68,7 @@ from imagenet_tool import id_to_synset, synset_to_id
 # score = model.evaluate_generator(val_generator, val_generator.n)
 # print score
 
-val_path = '/media/wac/backup/imagenet/ILSVRC/Data/CLS-LOC/val_dir'
+val_path = 'train_sample1'
 gt_list = os.listdir(val_path)
 
 model = resnet50.ResNet50(weights='imagenet')
