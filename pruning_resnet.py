@@ -26,7 +26,7 @@ f = open(categories, mode='r')
 classes = [line.strip() for line in f.readlines()]
 nb_classes = len(classes)
 
-compression_ratio = 0.4
+compression_ratio = 0.2
 image_size = (224, 224)
 batch_size = 16
 
@@ -101,6 +101,21 @@ def get_filtered_idx(filter_num, gradient):
     sorted_idx = np.argsort(gradient_sum)
     filtered_idx = sorted_idx[int(filter_num * compression_ratio):]
     return filtered_idx.tolist()
+
+def get_gradient_sum(gradient):
+    '''
+    Sort gradient of each layer.
+    gradient shape is (filter_kernel_size0, filter_kernel_size1, input_filter_num, output_filter_num),
+    1st, get abs_gradient
+    2nd, get sum, the shape is (1, output_filter_num)
+    then sort it.
+    :param filter_num: the filter number of this layer
+    :param gradient: the gradient of this layer
+    :return: list of filter index to be filtered
+    '''
+    gradient_abs = np.abs(gradient)
+    gradient_sum = np.sum(np.sum(np.sum(gradient_abs, axis=0), axis=0), axis=0)
+    return gradient_sum.tolist()
 
 def get_input_layer_name(layer):
     '''
@@ -178,7 +193,8 @@ def recursive_find_root_conv(hub_values, new_hub_values, hubs):
 
 if __name__ == '__main__':
 
-    model = resnet101_model('./model/resnet101_weights_tf.h5')
+    # model = resnet101_model('./model/resnet101_weights_tf.h5')
+    model = resnet50.ResNet50()
     sgd = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
     model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -231,28 +247,75 @@ if __name__ == '__main__':
     model_class_name = model_structure['class_name']
     if model_class_name == 'Model':
         model_layer_name = [layer['name'] for layer in model_structure['config']['layers']]
+
+
+
+    # special convolutional layer, don't prune
+    special_conv = []
+    for conv in hubs.values():
+        special_conv += conv
+    # sort based on all convolutional layers
+    conv_sum = {}
+    conv_filtered_idx = {}
+    for i, layer in enumerate(layers):
+        name = layer.name
+        if isinstance(layer, Convolution2D) and name not in special_conv:
+            gradient_sum = get_gradient_sum(gradients[name+'/kernel'])
+            conv_filtered_idx[name] = []
+            for i, val in enumerate(gradient_sum):
+                conv_sum[name+'_%d'%(i)] = val
+
+    conv_sum_sorted = sorted(conv_sum.iteritems(), key=lambda d: d[1])
+    for i, (name, _) in enumerate(conv_sum_sorted):
+        if i <= len(conv_sum) * compression_ratio:
+            continue
+
+        conv_name = name[:name.rfind('_')]
+        idx = int(name[name.rfind('_')+1:])
+        conv_filtered_idx[conv_name].append(idx)
+
     for i, layer in enumerate(layers):
         name = layer.name
         print name
         if isinstance(layer, Convolution2D):
             filter_num = layer.filters
-
-            filtered_idx = get_filtered_idx(filter_num, gradients[name+'/kernel'])
-            conv_filtered_idx[name] = filtered_idx
+            if name not in special_conv:
+                filter_num = len(conv_filtered_idx[name])
             if model_class_name == 'Model':
                 idx = model_layer_name.index(name)
-                model_structure['config']['layers'][idx]['config']['filters'] = len(conv_filtered_idx[name])
+                model_structure['config']['layers'][idx]['config']['filters'] = filter_num
             elif model_class_name == 'Sequential':
-                model_structure['config'][i]['config']['filters'] = len(conv_filtered_idx[name])
+                model_structure['config'][i]['config']['filters'] = filter_num
             else:
                 pass
-            print filter_num, filtered_idx
+            # print conv_filtered_idx[name]
         else:
             pass
 
+    # # sort based on each layer
+    # for i, layer in enumerate(layers):
+    #     name = layer.name
+    #     print name
+    #     if isinstance(layer, Convolution2D):
+    #         filter_num = layer.filters
+    #
+    #         filtered_idx = get_filtered_idx(filter_num, gradients[name+'/kernel'])
+    #         conv_filtered_idx[name] = filtered_idx
+    #         if model_class_name == 'Model':
+    #             idx = model_layer_name.index(name)
+    #             model_structure['config']['layers'][idx]['config']['filters'] = len(conv_filtered_idx[name])
+    #         elif model_class_name == 'Sequential':
+    #             model_structure['config'][i]['config']['filters'] = len(conv_filtered_idx[name])
+    #         else:
+    #             pass
+    #         print filter_num, filtered_idx
+    #     else:
+    #         pass
+
     model_json = json.dumps(model_structure)
-    new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
-    # new_model.summary()
+    # new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
+    new_model = model_from_json(model_json)
+    new_model.summary()
 
 
     # pruning filters
@@ -262,7 +325,7 @@ if __name__ == '__main__':
         name = layer.name
         print name
         weight = layer.get_weights()
-        if isinstance(layer, Convolution2D):
+        if isinstance(layer, Convolution2D) and name not in special_conv:
             new_weight = []
             channels = layer.input_shape[channels_idx]
 
@@ -314,5 +377,5 @@ if __name__ == '__main__':
             pass
             # new_model.layers[i].set_weights(weight)
 
-    new_model.save('resnet101_weights_tf_pruning.h5')
+    new_model.save('resnet50_weights_tf_pruning.h5')
 
