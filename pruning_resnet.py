@@ -257,22 +257,28 @@ if __name__ == '__main__':
     # sort based on all convolutional layers
     conv_sum = {}
     conv_filtered_idx = {}
+    filters_num = 0
     for i, layer in enumerate(layers):
         name = layer.name
         if isinstance(layer, Convolution2D) and name not in special_conv:
+            filters_num += layer.filters
+            conv_filtered_idx[name] = range(0,layer.filters)
             gradient_sum = get_gradient_sum(gradients[name+'/kernel'])
-            conv_filtered_idx[name] = []
+            # prevent some layer's filters are all deleted
+            gradient_list = np.argsort(gradient_sum).tolist()[:int(len(gradient_sum)*2*compression_ratio)]
             for i, val in enumerate(gradient_sum):
-                conv_sum[name+'_%d'%(i)] = val
+                if i in gradient_list:
+                    conv_sum[name+'_%d'%(i)] = val
 
     conv_sum_sorted = sorted(conv_sum.iteritems(), key=lambda d: d[1])
     for i, (name, _) in enumerate(conv_sum_sorted):
-        if i <= len(conv_sum) * compression_ratio:
+        if i > filters_num * compression_ratio:
             continue
 
         conv_name = name[:name.rfind('_')]
         idx = int(name[name.rfind('_')+1:])
-        conv_filtered_idx[conv_name].append(idx)
+        conv_filtered_idx[conv_name].remove(idx)
+        # conv_filtered_idx[conv_name].append(idx)
 
     for i, layer in enumerate(layers):
         name = layer.name
@@ -316,6 +322,7 @@ if __name__ == '__main__':
     # new_model = model_from_json(model_json, custom_objects={'Scale':Scale})
     new_model = model_from_json(model_json)
     new_model.summary()
+    plot_model(new_model, show_shapes=True)
 
 
     # pruning filters
@@ -377,5 +384,5 @@ if __name__ == '__main__':
             pass
             # new_model.layers[i].set_weights(weight)
 
-    new_model.save('resnet50_weights_tf_pruning.h5')
+    new_model.save('resnet50_weights_tf_pruning_0.2_global.h5')
 
