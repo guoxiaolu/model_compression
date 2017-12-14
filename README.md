@@ -5,7 +5,7 @@ This is an application of "PRUNING FILTERS FOR EFFICIENT CONVNETS"[https://arxiv
 
 This code is different in some places: 1. I don't compress the model layer by layer as time consuming. 2. Use Gaussian-like distribution to remove the layer channel instead fixed number/ratio.
 
-It supports VGG-like or resnet-like model. You can modify the "std_times"(the larger this value is, the more compressed the model is). I have tested in resnet50 on imagenet, and std_times=1.0 is better (about 13% parameters is moved).
+It supports VGG-like or resnet-like model. You can modify the "std_times"(the lower this value is, the more compressed the model is). I have tested in resnet50 on imagenet, and std_times=1.0 is better (about 13% parameters is moved).
 
 Inception-like model is not supported, as the 'concat' layer. You can take a try.
 
