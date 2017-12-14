@@ -13,7 +13,7 @@ from keras.utils import plot_model
 from inner_func import get_hubs_last_conv_name, get_filtered_idx, get_last_conv_layer_name, recursive_find_root_conv
 
 # compression_ratio = 0.2
-std_times = 0.8
+std_times = 1
 
 if K.image_dim_ordering() == 'th':
     channels_idx = 1
