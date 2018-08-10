@@ -9,7 +9,7 @@ It supports VGG-like or resnet-like model. You can modify the "std_times"(the lo
 
 Inception-like model is not supported, as the 'concat' layer. You can take a try.
 
-I have tested resnet50 on imagenet, if std_times=1.0, the top-1 error is 0.1% higher and top-5 error is 0.4% higher. However, I don't find the code evaluated in imagenet that can achieve the offical top-1 and top-5 error. If you know, please let me know. This is a hidden problem.
+I have tested resnet50 on imagenet, if std_times=1.0, the top-1 error is 0.1% higher and top-5 error is 0.4% higher. However, I don't find the code evaluated in imagenet that can achieve the offical top-1 and top-5 error. If you know, please let me know. This is a hidden problem.(This problem is solved, see[https://github.com/guoxiaolu/model_compression/issues/1])
 
 You can test lenet-5 on mnist, the evaluation result is almost same.
 
